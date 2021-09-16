@@ -37,10 +37,14 @@ type ShowArgs =
 
 type InstallArgs =
     | [<AltCommandLine("-p")>] Package of string
+    | [<AltCommandLine("-a")>] Alias of string option
     | [<AltCommandLine("-s")>] Source of Source option
 
     static member ToOptions(args: ParseResults<InstallArgs>) : InstallPackageOptions =
         { package = args.TryGetResult(InstallArgs.Package)
+          alias =
+              args.TryGetResult(InstallArgs.Alias)
+              |> Option.flatten
           source =
               args.TryGetResult(InstallArgs.Source)
               |> Option.flatten }
@@ -49,6 +53,7 @@ type InstallArgs =
         member this.Usage: string =
             match this with
             | Package _ -> "The name of the package to show information about."
+            | Alias _ -> "Specifier for this particular module."
             | Source _ -> "The name of the source you want to install a package from. e.g. unpkg or skypack."
 
 type SetEnvArgs =

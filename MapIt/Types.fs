@@ -1,13 +1,16 @@
 ﻿namespace MapIt.Types
 
 open System.Collections.Generic
+open System.Text.Json
 
 type MapitConfig =
     { name: string
-      author: string
       importMapPath: string option
-      contributors: string seq option
-      dependencies: IDictionary<string, obj> option }
+      dependencies: IDictionary<string, JsonElement> option }
+
+type ImportMap =
+    { imports: IDictionary<string, string>
+      scopes: IDictionary<string, string> }
 
 type Source =
     | Skypack = 0
@@ -27,6 +30,7 @@ type ShowPackageOptions = { package: string option }
 // https://cdn.skypack.dev/package-name
 type InstallPackageOptions =
     { package: string option
+      alias: string option
       source: Source option }
 
 type SetEnvOptions = { env: Env option }
@@ -34,3 +38,4 @@ type SetEnvOptions = { env: Env option }
 
 exception CommandNotParsedException of string
 exception HelpRequestedException
+exception MissingPackageNameException
