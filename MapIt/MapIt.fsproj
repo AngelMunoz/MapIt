@@ -3,15 +3,33 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
+    <Description>
+      A CLI tool for Skypack that enables unbundled and CDN based frontend development.
+    </Description>
+    <Summary>
+      MapIt generates an import map for skypack dependencies for your frontend development.
+    </Summary>
+    <Version>0.1.0</Version>
+    <Title>MapIt</Title>
+    <Authors>Angel D. Munoz</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <ProjectUrl>https://github.com/AngelMunoz/MapIt</ProjectUrl>
+    <RepositoryUrl>https://github.com/AngelMunoz/MapIt.git</RepositoryUrl>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mapit</ToolCommandName>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="Types.fs" />
+    <Compile Include="Runner.fs" />
     <Compile Include="Options.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Argu" Version="6.1.1" />
+    <PackageReference Include="Flurl.Http" Version="3.2.0" />
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="2.7.0" />
+    <PackageReference Include="FsToolkit.ErrorHandling.TaskResult" Version="2.7.0" />
   </ItemGroup>
 </Project>

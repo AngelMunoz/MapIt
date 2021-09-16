@@ -1,10 +1,12 @@
-﻿namespace LinkIt.Cli
+﻿namespace MapIt.Cli
 
 open Argu
-open LinkIt.Types
+open MapIt.Types
 
 type InitArgs =
     | [<AltCommandLine("-p")>] Path of string
+
+    static member ToOptions(args: ParseResults<InitArgs>) : InitOptions = { path = args.TryGetResult(Path) }
 
     interface IArgParserTemplate with
         member this.Usage: string =
@@ -14,6 +16,9 @@ type InitArgs =
 type SearchArgs =
     | [<AltCommandLine("-p")>] Package of string
 
+    static member ToOptions(args: ParseResults<SearchArgs>) : SearchOptions =
+        { package = args.TryGetResult(SearchArgs.Package) }
+
     interface IArgParserTemplate with
         member this.Usage: string =
             match this with
@@ -22,6 +27,9 @@ type SearchArgs =
 type ShowArgs =
     | [<AltCommandLine("-p")>] Package of string
 
+    static member ToOptions(args: ParseResults<ShowArgs>) : ShowPackageOptions =
+        { package = args.TryGetResult(ShowArgs.Package) }
+
     interface IArgParserTemplate with
         member this.Usage: string =
             match this with
@@ -29,7 +37,13 @@ type ShowArgs =
 
 type InstallArgs =
     | [<AltCommandLine("-p")>] Package of string
-    | [<AltCommandLine("-s")>] Source of Source
+    | [<AltCommandLine("-s")>] Source of Source option
+
+    static member ToOptions(args: ParseResults<InstallArgs>) : InstallPackageOptions =
+        { package = args.TryGetResult(InstallArgs.Package)
+          source =
+              args.TryGetResult(InstallArgs.Source)
+              |> Option.flatten }
 
     interface IArgParserTemplate with
         member this.Usage: string =
@@ -40,13 +54,15 @@ type InstallArgs =
 type SetEnvArgs =
     | [<AltCommandLine("-p")>] Env of Env
 
+    static member ToOptions(args: ParseResults<SetEnvArgs>) : SetEnvOptions = { env = args.TryGetResult(Env) }
+
     interface IArgParserTemplate with
         member this.Usage: string =
             match this with
             | Env _ -> "Sets the export map for development/production."
 
 
-type MigrondiArgs =
+type MapItArgs =
     | [<CliPrefix(CliPrefix.None)>] Init of ParseResults<InitArgs>
     | [<CliPrefix(CliPrefix.None); AltCommandLine("s")>] Search of ParseResults<SearchArgs>
     | [<CliPrefix(CliPrefix.None)>] Show of ParseResults<ShowArgs>
