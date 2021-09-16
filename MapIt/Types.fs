@@ -39,3 +39,4 @@ type SetEnvOptions = { env: Env option }
 exception CommandNotParsedException of string
 exception HelpRequestedException
 exception MissingPackageNameException
+exception MissingImportMapPathException

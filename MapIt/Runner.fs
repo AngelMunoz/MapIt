@@ -7,6 +7,7 @@ open System.Text.Json.Serialization
 
 open FsToolkit.ErrorHandling
 open MapIt.Types
+open System.Collections.Generic
 
 
 let private (|ScopedPackage|Package|) (package: string) =
@@ -15,11 +16,9 @@ let private (|ScopedPackage|Package|) (package: string) =
     else
         Package package
 
-let private parsePackageName (name: string) (withAt: bool) =
+let private parsePackageName (name: string) =
 
-    if name.Contains("@") then
-        let parts = name.Split("@")
-        let withAt = if withAt then "@" else ""
+    let getVersion parts =
 
         let version =
             let version =
@@ -30,9 +29,27 @@ let private parsePackageName (name: string) (withAt: bool) =
             else
                 Some version
 
-        $"{withAt}{parts.[0]}", version
-    else
-        name, None
+        version
+
+    match name with
+    | ScopedPackage name ->
+        // check if the user is looking to install a particular version
+        // i.e. package@5.0.0
+        if name.Contains("@") then
+            let parts = name.Split("@")
+            let version = getVersion parts
+
+            $"@{parts.[0]}", version
+        else
+            $"@{name}", None
+    | Package name ->
+        if name.Contains("@") then
+            let parts = name.Split("@")
+
+            let version = getVersion parts
+            parts.[0], version
+        else
+            name, None
 
 
 
@@ -74,27 +91,100 @@ let runShow options =
         return 0
     }
 
+let private getOptions () =
+    try
+        let bytes = File.ReadAllBytes("./mapit.json")
+
+        JsonSerializer.Deserialize<MapitConfig>(ReadOnlySpan bytes)
+        |> Ok
+    with
+    | ex -> ex |> Error
+
+
+let private getOrCreateImportMap (path: string) : Result<ImportMap, exn> =
+    try
+        let path = Path.GetFullPath(path)
+
+        Directory.CreateDirectory(Path.GetDirectoryName(path))
+        |> ignore
+
+        let bytes = File.ReadAllBytes(path)
+
+        JsonSerializer.Deserialize<ImportMap>(ReadOnlySpan bytes)
+        |> Ok
+    with
+    | :? System.IO.FileNotFoundException ->
+        { imports = dict (Seq.empty)
+          scopes = dict (Seq.empty) }
+        |> Ok
+    | ex -> ex |> Error
+
+let private writeImportMap (path: string) (map: ImportMap) : Result<unit, exn> =
+    result {
+        let opts =
+            let opts = JsonSerializerOptions()
+            opts.WriteIndented <- true
+            opts
+
+        let bytes =
+            JsonSerializer.SerializeToUtf8Bytes(map, options = opts)
+
+        try
+            let path = Path.GetFullPath(path)
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path))
+            |> ignore
+
+            File.WriteAllBytes(path, bytes)
+        with
+        | ex -> return! ex |> Error
+    }
+
 let runInstall options =
     result {
         let! package, version =
             match options.package with
-            | Some (ScopedPackage package) -> parsePackageName package true |> Ok
-            | Some (Package package) -> parsePackageName package false |> Ok
+            | Some package -> parsePackageName package |> Ok
             | None -> MissingPackageNameException |> Error
 
         let alias =
             options.alias |> Option.defaultValue package
 
+        let version =
+            match version with
+            | Some version -> $"@{version}"
+            | None -> ""
+
+        let url =
+            $"https://cdn.skypack.dev/{package}{version}"
+
+        let! opts = getOptions ()
+
+        let! path =
+            match opts.importMapPath with
+            | Some path -> path |> Ok
+            | None -> MissingImportMapPathException |> Error
+
+        let! map = getOrCreateImportMap path
+
+        let imports =
+            seq {
+                for pair in map.imports do
+                    pair.Key, pair.Value
+            }
+            |> Map.ofSeq
+            |> Map.change
+                alias
+                (fun v ->
+                    v
+                    |> Option.map (fun _ -> url)
+                    |> Option.orElse (Some url))
+
         let map =
-            let version =
-                match version with
-                | Some version -> $"@{version}"
-                | None -> ""
+            { map with
+                  imports = dict (imports |> Map.toSeq) }
 
-            { imports = dict [ alias, $"https://cdn.skypack.dev/{package}{version}" ]
-              scopes = dict (Seq.empty) }
-            |> JsonSerializer.Serialize
+        do! writeImportMap path map
 
-        printfn "%A" map
         return 0
     }
