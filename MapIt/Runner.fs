@@ -8,6 +8,8 @@ open System.Text.Json.Serialization
 open FsToolkit.ErrorHandling
 open MapIt.Types
 open System.Collections.Generic
+open FSharp.Control.Tasks
+open Flurl.Http
 
 
 let private (|ScopedPackage|Package|) (package: string) =
@@ -51,6 +53,17 @@ let private parsePackageName (name: string) =
         else
             name, None
 
+[<Literal>]
+let SKYPACK_CDN = "https://cdn.skypack.dev"
+
+let checkPackageExists name =
+    taskResult {
+        try
+            let! result = $"{SKYPACK_CDN}/%s{name}".GetAsync()
+            return result.StatusCode = 200
+        with
+        | :? Flurl.Http.FlurlHttpException -> return! PackageNotFoundException |> Error
+    }
 
 
 let runInit options =
@@ -140,8 +153,40 @@ let private writeImportMap (path: string) (map: ImportMap) : Result<unit, exn> =
         | ex -> return! ex |> Error
     }
 
-let runInstall options =
+let runUninstall (options: UninstallPackageOptions) =
     result {
+        let name = defaultArg options.package ""
+
+        if name = "" then
+            return! PackageNotFoundException |> Error
+
+        let! opts = getOptions ()
+
+        let! path =
+            match opts.importMapPath with
+            | Some path -> path |> Ok
+            | None -> MissingImportMapPathException |> Error
+
+        let! map = getOrCreateImportMap path
+
+        let imports =
+            seq {
+                for pair in map.imports do
+                    pair.Key, pair.Value
+            }
+            |> Map.ofSeq
+            |> Map.remove name
+
+        let map =
+            { map with
+                  imports = dict (imports |> Map.toSeq) }
+
+        do! writeImportMap path map
+        return 0
+    }
+
+let runInstall (options: InstallPackageOptions) =
+    taskResult {
         let! package, version =
             match options.package with
             | Some package -> parsePackageName package |> Ok
@@ -155,8 +200,12 @@ let runInstall options =
             | Some version -> $"@{version}"
             | None -> ""
 
-        let url =
-            $"https://cdn.skypack.dev/{package}{version}"
+        match! checkPackageExists $"{package}{version}" with
+        | false -> return! PackageNotFoundException |> Error
+        | true -> ()
+
+
+        let url = $"{SKYPACK_CDN}/{package}{version}"
 
         let! opts = getOptions ()
 

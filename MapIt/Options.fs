@@ -35,6 +35,17 @@ type ShowArgs =
             match this with
             | Package _ -> "The name of the package to show information about."
 
+type UninstallArgs =
+    | [<AltCommandLine("-p")>] Package of string
+
+    static member ToOptions(args: ParseResults<UninstallArgs>) : UninstallPackageOptions =
+        { package = args.TryGetResult(UninstallArgs.Package) }
+
+    interface IArgParserTemplate with
+        member this.Usage: string =
+            match this with
+            | Package _ -> "The name of the package to remove from the import map this can also be aliased name."
+
 type InstallArgs =
     | [<AltCommandLine("-p")>] Package of string
     | [<AltCommandLine("-a")>] Alias of string option
@@ -72,6 +83,7 @@ type MapItArgs =
     | [<CliPrefix(CliPrefix.None); AltCommandLine("s")>] Search of ParseResults<SearchArgs>
     | [<CliPrefix(CliPrefix.None)>] Show of ParseResults<ShowArgs>
     | [<CliPrefix(CliPrefix.None)>] Install of ParseResults<InstallArgs>
+    | [<CliPrefix(CliPrefix.None)>] Uninstall of ParseResults<UninstallArgs>
     | [<AltCommandLine("-v")>] Version
 
     interface IArgParserTemplate with
@@ -80,5 +92,6 @@ type MapItArgs =
             | Init _ -> "Creates basic files and directories to start using mapit."
             | Search _ -> "Searches a package in the skypack API."
             | Show _ -> "Gets the skypack information about a package."
-            | Install _ -> "Generates an entry in the import map and saves it to the dependencies."
+            | Install _ -> "Generates an entry in the import map."
+            | Uninstall _ -> "Removes an entry in the import map."
             | Version _ -> "Prints out the cli version to the console."

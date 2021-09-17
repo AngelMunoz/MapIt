@@ -33,6 +33,8 @@ type InstallPackageOptions =
       alias: string option
       source: Source option }
 
+type UninstallPackageOptions = { package: string option }
+
 type SetEnvOptions = { env: Env option }
 
 
@@ -40,3 +42,4 @@ exception CommandNotParsedException of string
 exception HelpRequestedException
 exception MissingPackageNameException
 exception MissingImportMapPathException
+exception PackageNotFoundException
