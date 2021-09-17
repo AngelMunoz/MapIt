@@ -1,16 +1,20 @@
 ﻿namespace MapIt.Types
 
-open System.Collections.Generic
-open System.Text.Json
+type LockDependency =
+    { lookUp: string
+      pin: string
+      import: string }
 
 type MapitConfig =
     { name: string
       importMapPath: string option
-      dependencies: IDictionary<string, JsonElement> option }
+      dependencies: Map<string, string> option }
+
+type MapItLock = Map<string, LockDependency>
 
 type ImportMap =
-    { imports: IDictionary<string, string>
-      scopes: IDictionary<string, string> }
+    { imports: Map<string, string>
+      scopes: Map<string, string> }
 
 type Source =
     | Skypack = 0
@@ -43,3 +47,4 @@ exception HelpRequestedException
 exception MissingPackageNameException
 exception MissingImportMapPathException
 exception PackageNotFoundException
+exception HeaderNotFoundException of string

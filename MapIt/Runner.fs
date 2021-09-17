@@ -2,15 +2,11 @@ module MapIt.Runner
 
 open System
 open System.IO
-open System.Text.Json
-open System.Text.Json.Serialization
 
 open FsToolkit.ErrorHandling
 open MapIt.Types
-open System.Collections.Generic
-open FSharp.Control.Tasks
-open Flurl.Http
 
+open type Fs.Paths
 
 let private (|ScopedPackage|Package|) (package: string) =
     if package.StartsWith("@") then
@@ -53,36 +49,19 @@ let private parsePackageName (name: string) =
         else
             name, None
 
-[<Literal>]
-let SKYPACK_CDN = "https://cdn.skypack.dev"
-
-let checkPackageExists name =
-    taskResult {
-        try
-            let! result = $"{SKYPACK_CDN}/%s{name}".GetAsync()
-            return result.StatusCode = 200
-        with
-        | :? Flurl.Http.FlurlHttpException -> return! PackageNotFoundException |> Error
-    }
-
-
 let runInit options =
     result {
         let path =
-            $"{defaultArg options.path (Environment.CurrentDirectory)}/mapit.json"
+            match options.path with
+            | Some path -> GetMapItConfigPath(path)
+            | None -> GetMapItConfigPath()
 
         let config =
             { name = ""
-              importMapPath = "./public/imports.importmap" |> Some
-              dependencies = dict (Seq.empty<string * JsonElement>) |> Some }
+              importMapPath = "./wwwroot/imports.importmap" |> Some
+              dependencies = Map.ofSeq (Seq.empty<string * string>) |> Some }
 
-        let bytes =
-            let opts =
-                let opts = JsonSerializerOptions()
-                opts.WriteIndented <- true
-                opts
-
-            JsonSerializer.SerializeToUtf8Bytes(config, options = opts)
+        let bytes = Json.ToBytes config
 
         try
             File.WriteAllBytes(path, bytes)
@@ -104,84 +83,27 @@ let runShow options =
         return 0
     }
 
-let private getOptions () =
-    try
-        let bytes = File.ReadAllBytes("./mapit.json")
-
-        JsonSerializer.Deserialize<MapitConfig>(ReadOnlySpan bytes)
-        |> Ok
-    with
-    | ex -> ex |> Error
-
-
-let private getOrCreateImportMap (path: string) : Result<ImportMap, exn> =
-    try
-        let path = Path.GetFullPath(path)
-
-        Directory.CreateDirectory(Path.GetDirectoryName(path))
-        |> ignore
-
-        let bytes = File.ReadAllBytes(path)
-
-        JsonSerializer.Deserialize<ImportMap>(ReadOnlySpan bytes)
-        |> Ok
-    with
-    | :? System.IO.FileNotFoundException ->
-        { imports = dict (Seq.empty)
-          scopes = dict (Seq.empty) }
-        |> Ok
-    | ex -> ex |> Error
-
-let private writeImportMap (path: string) (map: ImportMap) : Result<unit, exn> =
-    result {
-        let opts =
-            let opts = JsonSerializerOptions()
-            opts.WriteIndented <- true
-            opts
-
-        let bytes =
-            JsonSerializer.SerializeToUtf8Bytes(map, options = opts)
-
-        try
-            let path = Path.GetFullPath(path)
-
-            Directory.CreateDirectory(Path.GetDirectoryName(path))
-            |> ignore
-
-            File.WriteAllBytes(path, bytes)
-        with
-        | ex -> return! ex |> Error
-    }
-
 let runUninstall (options: UninstallPackageOptions) =
-    result {
+    taskResult {
         let name = defaultArg options.package ""
 
         if name = "" then
             return! PackageNotFoundException |> Error
 
-        let! opts = getOptions ()
+        let! opts = Fs.getMapitConfig (GetMapItConfigPath())
 
         let! path =
             match opts.importMapPath with
             | Some path -> path |> Ok
             | None -> MissingImportMapPathException |> Error
 
-        let! map = getOrCreateImportMap path
+        let! map = Fs.getOrCreateImportMap path
 
-        let imports =
-            seq {
-                for pair in map.imports do
-                    pair.Key, pair.Value
-            }
-            |> Map.ofSeq
-            |> Map.remove name
+        let imports = map.imports |> Map.remove name
 
-        let map =
-            { map with
-                  imports = dict (imports |> Map.toSeq) }
+        let map = { map with imports = imports }
 
-        do! writeImportMap path map
+        do! Fs.writeImportMap path map
         return 0
     }
 
@@ -200,40 +122,55 @@ let runInstall (options: InstallPackageOptions) =
             | Some version -> $"@{version}"
             | None -> ""
 
-        match! checkPackageExists $"{package}{version}" with
-        | false -> return! PackageNotFoundException |> Error
-        | true -> ()
+        let! info = Http.getPackageUrlInfo $"{package}{version}"
 
+        let! opts = Fs.getMapitConfig (GetMapItConfigPath())
+        let! lockFile = Fs.getorCreateLockFile (GetMapItConfigPath())
 
-        let url = $"{SKYPACK_CDN}/{package}{version}"
+        let dependencies =
+            opts.dependencies
+            |> Option.defaultValue (Map.ofList [])
+            |> Map.change
+                alias
+                (fun f ->
+                    f
+                    |> Option.map (fun _ -> $"{Http.SKYPACK_CDN}/{info.lookUp}")
+                    |> Option.orElse (Some $"{Http.SKYPACK_CDN}/{info.lookUp}"))
 
-        let! opts = getOptions ()
+        let opts =
+            { opts with
+                  dependencies = Some dependencies }
 
-        let! path =
+        let lockFile =
+            lockFile
+            |> Map.change
+                alias
+                (fun f ->
+                    f
+                    |> Option.map (fun _ -> info)
+                    |> Option.orElse (Some info))
+
+        let! importMapPath =
             match opts.importMapPath with
             | Some path -> path |> Ok
             | None -> MissingImportMapPathException |> Error
 
-        let! map = getOrCreateImportMap path
+        let! map = Fs.getOrCreateImportMap importMapPath
 
         let imports =
-            seq {
-                for pair in map.imports do
-                    pair.Key, pair.Value
-            }
-            |> Map.ofSeq
+            map.imports
             |> Map.change
                 alias
                 (fun v ->
                     v
-                    |> Option.map (fun _ -> url)
-                    |> Option.orElse (Some url))
+                    |> Option.map (fun _ -> $"{Http.SKYPACK_CDN}/{info.lookUp}")
+                    |> Option.orElse (Some $"{Http.SKYPACK_CDN}/{info.lookUp}"))
 
-        let map =
-            { map with
-                  imports = dict (imports |> Map.toSeq) }
+        let map = { map with imports = imports }
 
-        do! writeImportMap path map
+        do! Fs.createMapitConfig (GetMapItConfigPath()) opts
+        do! Fs.writeImportMap importMapPath map
+        do! Fs.writeLockFile (GetMapItConfigPath()) lockFile
 
         return 0
     }

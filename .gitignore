@@ -404,5 +404,6 @@ ASALocalRun/
 # Local History for Visual Studio
 .localhistory/
 .ionide/
-mapit.json
+mapit.jsonc
+mapit.jsonc.lock
 *.importmap
